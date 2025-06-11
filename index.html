@@ -2,129 +2,113 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Code 128 Scanner (with Beep)</title>
-  <script src="https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js"></script>
+  <title>📦 Code 128 Barcode Scanner</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      margin: 30px auto;
-      max-width: 700px;
+      padding: 20px;
     }
-    #interactive {
-      width: 100%;
-      max-width: 500px;
-      margin: auto;
-      position: relative;
+
+    #video-container {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 10px;
     }
-    video, canvas {
-      width: 100%;
-    }
-    #status {
-      font-size: 18px;
-      font-weight: bold;
-      color: blue;
-      margin-top: 10px;
-    }
-    #result {
-      margin-top: 10px;
-      font-size: 20px;
-      color: green;
-    }
+
     #log {
-      margin-top: 20px;
-      max-height: 200px;
-      overflow-y: auto;
-      background: #f8f8f8;
+      max-width: 600px;
+      margin: 0 auto;
       text-align: left;
+      border: 1px solid #ccc;
       padding: 10px;
       font-family: monospace;
-      border: 1px solid #ccc;
+      background: #f9f9f9;
+    }
+
+    #status {
+      font-weight: bold;
+      color: green;
+    }
+
+    audio {
+      display: none;
+    }
+
+    canvas {
+      display: none;
     }
   </style>
 </head>
 <body>
-
   <h2>📦 Code 128 Barcode Scanner</h2>
-  <p id="status">🔄 Ready to scan...</p>
-  <div id="interactive" class="viewport"></div>
-  <p id="result">No scan yet</p>
+  <div id="status">📶 Ready to scan...</div>
+  <div id="video-container">
+    <div id="scanner" style="width: 400px; height: 300px;"></div>
+  </div>
 
   <h3>📜 Scan Log</h3>
   <div id="log">No scans yet.</div>
 
-  <!-- Beep sound -->
-  <audio id="beep-sound" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" preload="auto"></audio>
+  <audio id="beep" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
   <script>
-    const resultEl = document.getElementById('result');
-    const statusEl = document.getElementById('status');
-    const logEl = document.getElementById('log');
-    const beep = document.getElementById('beep-sound');
-    let lastCode = '';
+    const log = document.getElementById("log");
+    const status = document.getElementById("status");
+    const beep = document.getElementById("beep");
+
+    let lastCode = null;
+    let lastScanTime = 0;
+
+    function logScan(code) {
+      const timestamp = new Date().toLocaleTimeString();
+      const entry = `${timestamp} → ${code}`;
+      log.textContent = (log.textContent === "No scans yet.") ? entry : `${entry}\n${log.textContent}`;
+    }
 
     Quagga.init({
       inputStream: {
         type: "LiveStream",
-        target: document.querySelector('#interactive'),
+        target: document.querySelector("#scanner"),
         constraints: {
-          width: 640,
-          height: 480,
           facingMode: "environment"
         }
       },
       locator: {
-        patchSize: "medium",
+        patchSize: "x-large",
         halfSample: true
       },
-      numOfWorkers: 2,
+      frequency: 30,
       decoder: {
         readers: ["code_128_reader"]
       },
-      locate: true,
-      frequency: 10
-    }, function(err) {
+      locate: true
+    }, err => {
       if (err) {
-        console.error(err);
-        statusEl.textContent = '❌ Failed to start scanner.';
+        console.error("Quagga init error:", err);
+        status.textContent = "❌ Failed to initialize scanner.";
         return;
       }
       Quagga.start();
-      console.log("Quagga started");
     });
 
-    Quagga.onDetected(async function(data) {
-      const code = data.codeResult.code;
-      if (code && code !== lastCode) {
+    Quagga.onDetected(result => {
+      const code = result.codeResult.code;
+      const now = Date.now();
+      if (code !== lastCode || now - lastScanTime > 2000) { // Prevent duplicates
         lastCode = code;
-        resultEl.textContent = '✅ Scanned: ' + code;
-        statusEl.textContent = '⏸ Paused...';
-
-        try {
-          await navigator.clipboard.writeText(code);
-        } catch (err) {
-          console.error('Clipboard error:', err);
-        }
-
-        // Log
-        const time = new Date().toLocaleTimeString();
-        const line = document.createElement('div');
-        line.textContent = `[${time}] ${code}`;
-        logEl.appendChild(line);
-        logEl.scrollTop = logEl.scrollHeight;
-
-        // Beep
-        beep.currentTime = 0;
+        lastScanTime = now;
+        navigator.clipboard.writeText(code).catch(console.error);
+        status.textContent = `✅ Scanned: ${code}`;
         beep.play();
+        logScan(code);
+      }
+    });
 
-        // Pause briefly to avoid duplicate scans
-        Quagga.pause();
-        setTimeout(() => {
-          resultEl.textContent = 'No scan yet';
-          statusEl.textContent = '🔄 Ready to scan...';
-          lastCode = '';
-          Quagga.start();
-        }, 1000);
+    Quagga.onProcessed(result => {
+      if (!result || !result.codeResult || !result.codeResult.code) {
+        status.textContent = "📶 Ready to scan...";
       }
     });
   </script>

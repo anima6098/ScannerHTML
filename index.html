@@ -1,134 +1,115 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Code 128 Scanner with Log</title>
-  <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <meta charset="UTF-8">
+  <title>Code 128 Scanner (Preprocessed)</title>
+  <script src="https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       text-align: center;
-      margin: 40px auto;
-      max-width: 600px;
+      margin: 30px auto;
+      max-width: 700px;
     }
-    video {
-      border: 2px solid black;
+    #interactive {
       width: 100%;
-      max-width: 480px;
+      max-width: 500px;
+      margin: auto;
+      position: relative;
+    }
+    canvas, video {
+      width: 100%;
     }
     #result {
-      margin: 15px 0;
+      margin-top: 15px;
       font-size: 18px;
       color: green;
     }
     #log {
-      text-align: left;
       margin-top: 20px;
       max-height: 200px;
       overflow-y: auto;
-      border: 1px solid #ccc;
+      background: #f8f8f8;
+      text-align: left;
       padding: 10px;
       font-family: monospace;
-      background: #f8f8f8;
-    }
-    button {
-      margin-top: 10px;
-      padding: 8px 16px;
-      font-size: 16px;
+      border: 1px solid #ccc;
     }
   </style>
 </head>
 <body>
-
   <h2>📦 Code 128 Barcode Scanner</h2>
-  <video id="video" autoplay muted playsinline></video>
+  <div id="interactive" class="viewport"></div>
   <p id="result">Waiting for scan...</p>
-  <button onclick="toggleTorch()">🔦 Toggle Flashlight</button>
 
   <h3>📜 Scan Log</h3>
   <div id="log">No scans yet.</div>
 
   <script>
-    const ZX = ZXing;
-    const videoElement = document.getElementById('video');
-    const resultElement = document.getElementById('result');
-    const logElement = document.getElementById('log');
+    const resultEl = document.getElementById('result');
+    const logEl = document.getElementById('log');
+    let lastCode = '';
 
-    let lastScan = '';
-    let scanning = true;
-    let streamTrack = null;
-
-    // Restrict to Code 128 only
-    const hints = new Map();
-    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [ZX.BarcodeFormat.CODE_128]);
-    const reader = new ZX.BrowserMultiFormatReader(hints);
-
-    reader.listVideoInputDevices()
-      .then(videoInputDevices => {
-        const deviceId = videoInputDevices[0].deviceId;
-
-        // Slightly lower res for faster scan
-        reader.decodeFromConstraints({
-          video: {
-            deviceId: deviceId,
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: "environment"
-          }
-        }, videoElement, async (result, err) => {
-          if (result && scanning) {
-            scanning = false;
-            const text = result.getText();
-            resultElement.textContent = '✅ Scanned: ' + text;
-
-            // Copy to clipboard
-            try {
-              await navigator.clipboard.writeText(text);
-              console.log('Copied to clipboard:', text);
-            } catch (e) {
-              console.error('Clipboard error:', e);
-            }
-
-            // Log the scan
-            const time = new Date().toLocaleTimeString();
-            const newLog = document.createElement('div');
-            newLog.textContent = `[${time}] ${text}`;
-            logElement.appendChild(newLog);
-            logElement.scrollTop = logElement.scrollHeight;
-
-            // Resume scanning after 1 second
-            setTimeout(() => {
-              resultElement.textContent = '🔄 Ready for next scan';
-              scanning = true;
-            }, 1000);
-          } else if (err && !(err instanceof ZX.NotFoundException)) {
-            console.error(err);
-          }
-        });
-
-        // Torch control
-        navigator.mediaDevices.getUserMedia({
-          video: { deviceId: deviceId }
-        }).then(stream => {
-          streamTrack = stream.getVideoTracks()[0];
-        }).catch(console.error);
-      })
-      .catch(err => {
+    Quagga.init({
+      inputStream: {
+        type: "LiveStream",
+        target: document.querySelector('#interactive'),
+        constraints: {
+          width: 640,
+          height: 480,
+          facingMode: "environment"
+        }
+      },
+      locator: {
+        patchSize: "medium",
+        halfSample: true
+      },
+      numOfWorkers: 2,
+      decoder: {
+        readers: ["code_128_reader"]
+      },
+      locate: true,
+      frequency: 10, // FPS for scan attempts
+    }, function(err) {
+      if (err) {
         console.error(err);
-        resultElement.textContent = '❌ Could not access camera. Check permissions.';
-      });
-
-    function toggleTorch() {
-      if (!streamTrack) return alert("Camera not ready.");
-      const capabilities = streamTrack.getCapabilities();
-      if ('torch' in capabilities) {
-        const current = streamTrack.getSettings().torch || false;
-        streamTrack.applyConstraints({
-          advanced: [{ torch: !current }]
-        });
-      } else {
-        alert("❌ Torch not supported on this device.");
+        return;
       }
-    }
+      Quagga.start();
+      console.log("Quagga started");
+    });
+
+    Quagga.onProcessed(function(result) {
+      // Optional: visualize processing (grayscale, boxes, etc.)
+    });
+
+    Quagga.onDetected(async function(data) {
+      const code = data.codeResult.code;
+      if (code && code !== lastCode) {
+        lastCode = code;
+        resultEl.textContent = '✅ Scanned: ' + code;
+
+        try {
+          await navigator.clipboard.writeText(code);
+        } catch (err) {
+          console.error('Clipboard error:', err);
+        }
+
+        const time = new Date().toLocaleTimeString();
+        const line = document.createElement('div');
+        line.textContent = `[${time}] ${code}`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+
+        // Debounce scanning for 1s to avoid duplicates
+        Quagga.pause();
+        setTimeout(() => {
+          resultEl.textContent = '🔄 Ready for next scan';
+          lastCode = '';
+          Quagga.start();
+        }, 1000);
+      }
+    });
   </script>
 </body>
 </html>

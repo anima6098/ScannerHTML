@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Code 128 Barcode Scanner</title>
+  <title>Code 128 Scanner with Log</title>
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       text-align: center;
       margin: 40px auto;
+      max-width: 600px;
     }
     video {
       border: 2px solid black;
@@ -15,13 +16,23 @@
       max-width: 480px;
     }
     #result {
-      margin-top: 20px;
-      font-size: 20px;
+      margin: 15px 0;
+      font-size: 18px;
       color: green;
     }
+    #log {
+      text-align: left;
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ccc;
+      padding: 10px;
+      font-family: monospace;
+      background: #f8f8f8;
+    }
     button {
-      margin-top: 15px;
-      padding: 10px 20px;
+      margin-top: 10px;
+      padding: 8px 16px;
       font-size: 16px;
     }
   </style>
@@ -33,58 +44,68 @@
   <p id="result">Waiting for scan...</p>
   <button onclick="toggleTorch()">🔦 Toggle Flashlight</button>
 
+  <h3>📜 Scan Log</h3>
+  <div id="log">No scans yet.</div>
+
   <script>
-    const ZX = ZXing; // alias for convenience
-    const codeReader = new ZX.BrowserMultiFormatReader();
-    const resultElement = document.getElementById('result');
+    const ZX = ZXing;
     const videoElement = document.getElementById('video');
+    const resultElement = document.getElementById('result');
+    const logElement = document.getElementById('log');
 
-    let streamTrack = null;
+    let lastScan = '';
     let scanning = true;
+    let streamTrack = null;
 
-    // Only allow Code 128 scanning
-    const formats = [ZX.BarcodeFormat.CODE_128];
+    // Restrict to Code 128 only
     const hints = new Map();
-    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, formats);
-    const code128Reader = new ZX.BrowserMultiFormatReader(hints);
+    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [ZX.BarcodeFormat.CODE_128]);
+    const reader = new ZX.BrowserMultiFormatReader(hints);
 
-    code128Reader
-      .listVideoInputDevices()
+    reader.listVideoInputDevices()
       .then(videoInputDevices => {
         const deviceId = videoInputDevices[0].deviceId;
 
-        // Use higher resolution + environment camera
-        code128Reader.decodeFromConstraints({
+        // Slightly lower res for faster scan
+        reader.decodeFromConstraints({
           video: {
             deviceId: deviceId,
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
             facingMode: "environment"
           }
         }, videoElement, async (result, err) => {
           if (result && scanning) {
-            scanning = false; // pause scanning during clipboard copy
+            scanning = false;
             const text = result.getText();
             resultElement.textContent = '✅ Scanned: ' + text;
 
+            // Copy to clipboard
             try {
               await navigator.clipboard.writeText(text);
               console.log('Copied to clipboard:', text);
             } catch (e) {
-              console.error('Clipboard write failed:', e);
+              console.error('Clipboard error:', e);
             }
 
-            // Wait 2 seconds, then allow next scan
+            // Log the scan
+            const time = new Date().toLocaleTimeString();
+            const newLog = document.createElement('div');
+            newLog.textContent = `[${time}] ${text}`;
+            logElement.appendChild(newLog);
+            logElement.scrollTop = logElement.scrollHeight;
+
+            // Resume scanning after 1 second
             setTimeout(() => {
               resultElement.textContent = '🔄 Ready for next scan';
               scanning = true;
-            }, 2000);
+            }, 1000);
           } else if (err && !(err instanceof ZX.NotFoundException)) {
             console.error(err);
           }
         });
 
-        // Capture the stream to toggle torch if needed
+        // Torch control
         navigator.mediaDevices.getUserMedia({
           video: { deviceId: deviceId }
         }).then(stream => {

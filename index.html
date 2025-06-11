@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Barcode Scanner (Improved)</title>
+  <title>Code 128 Barcode Scanner</title>
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
     body {
@@ -28,53 +28,68 @@
 </head>
 <body>
 
-  <h2>📷 Barcode Scanner (Real-time)</h2>
+  <h2>📦 Code 128 Barcode Scanner</h2>
   <video id="video" autoplay muted playsinline></video>
   <p id="result">Waiting for scan...</p>
   <button onclick="toggleTorch()">🔦 Toggle Flashlight</button>
 
   <script>
-    const codeReader = new ZXing.BrowserMultiFormatReader(); // You can specify format here if needed
+    const ZX = ZXing; // alias for convenience
+    const codeReader = new ZX.BrowserMultiFormatReader();
     const resultElement = document.getElementById('result');
     const videoElement = document.getElementById('video');
 
-    let lastScanned = '';
     let streamTrack = null;
+    let scanning = true;
 
-    codeReader
+    // Only allow Code 128 scanning
+    const formats = [ZX.BarcodeFormat.CODE_128];
+    const hints = new Map();
+    hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, formats);
+    const code128Reader = new ZX.BrowserMultiFormatReader(hints);
+
+    code128Reader
       .listVideoInputDevices()
       .then(videoInputDevices => {
         const deviceId = videoInputDevices[0].deviceId;
 
-        codeReader.decodeFromConstraints({
+        // Use higher resolution + environment camera
+        code128Reader.decodeFromConstraints({
           video: {
             deviceId: deviceId,
             width: { ideal: 1280 },
             height: { ideal: 720 },
             facingMode: "environment"
           }
-        }, videoElement, (result, err) => {
-          if (result) {
+        }, videoElement, async (result, err) => {
+          if (result && scanning) {
+            scanning = false; // pause scanning during clipboard copy
             const text = result.getText();
-            if (text !== lastScanned) {
-              lastScanned = text;
-              resultElement.textContent = '✅ Scanned: ' + text;
-              navigator.clipboard.writeText(text)
-                .then(() => console.log('Copied to clipboard:', text))
-                .catch(err => console.error('Clipboard error:', err));
+            resultElement.textContent = '✅ Scanned: ' + text;
+
+            try {
+              await navigator.clipboard.writeText(text);
+              console.log('Copied to clipboard:', text);
+            } catch (e) {
+              console.error('Clipboard write failed:', e);
             }
-          } else if (err && !(err instanceof ZXing.NotFoundException)) {
+
+            // Wait 2 seconds, then allow next scan
+            setTimeout(() => {
+              resultElement.textContent = '🔄 Ready for next scan';
+              scanning = true;
+            }, 2000);
+          } else if (err && !(err instanceof ZX.NotFoundException)) {
             console.error(err);
           }
         });
 
-        // Get the video stream for torch toggle
+        // Capture the stream to toggle torch if needed
         navigator.mediaDevices.getUserMedia({
           video: { deviceId: deviceId }
         }).then(stream => {
           streamTrack = stream.getVideoTracks()[0];
         }).catch(console.error);
-
       })
       .catch(err => {
         console.error(err);
@@ -85,9 +100,9 @@
       if (!streamTrack) return alert("Camera not ready.");
       const capabilities = streamTrack.getCapabilities();
       if ('torch' in capabilities) {
-        const torchOn = streamTrack.getSettings().torch || false;
+        const current = streamTrack.getSettings().torch || false;
         streamTrack.applyConstraints({
-          advanced: [{ torch: !torchOn }]
+          advanced: [{ torch: !current }]
         });
       } else {
         alert("❌ Torch not supported on this device.");

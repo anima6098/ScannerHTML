@@ -2,36 +2,44 @@
 <html>
 <head>
   <title>Barcode Scanner</title>
-  <script type="module">
-    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@latest/+esm';
-
-    const codeReader = new BrowserMultiFormatReader();
-    const resultElement = document.getElementById('result');
-
-    codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-      if (result) {
-        const text = result.getText();
-        resultElement.textContent = '✅ Scanned: ' + text;
-        navigator.clipboard.writeText(text).then(() => {
-          console.log('Copied to clipboard:', text);
-        });
-      } else if (err && !(err instanceof ZXing.NotFoundException)) {
-        console.error(err);
-      }
-    }).catch(err => {
-      console.error('Camera access error:', err);
-      resultElement.textContent = '❌ Could not access camera. Check browser permissions.';
-    });
-  </script>
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin: 40px; }
-    video { border: 2px solid #000; width: 100%; max-width: 480px; }
-    #result { font-size: 20px; margin-top: 20px; color: green; }
+    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+    video { border: 1px solid black; width: 100%; max-width: 480px; }
+    #result { margin-top: 20px; font-size: 20px; color: green; }
   </style>
 </head>
 <body>
   <h2>📷 Barcode Scanner (Real-time)</h2>
   <video id="video" autoplay muted playsinline></video>
   <p id="result">Waiting for scan...</p>
+
+  <script>
+    const selectedDeviceId = null;
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const resultElement = document.getElementById('result');
+
+    codeReader
+      .listVideoInputDevices()
+      .then(videoInputDevices => {
+        const deviceId = selectedDeviceId || videoInputDevices[0].deviceId;
+
+        codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+          if (result) {
+            const text = result.getText();
+            resultElement.textContent = '✅ Scanned: ' + text;
+            navigator.clipboard.writeText(text).then(() => {
+              console.log('Copied to clipboard:', text);
+            });
+          } else if (err && !(err instanceof ZXing.NotFoundException)) {
+            console.error(err);
+          }
+        });
+      })
+      .catch(err => {
+        console.error(err);
+        resultElement.textContent = '❌ Could not access camera. Check permissions.';
+      });
+  </script>
 </body>
 </html>

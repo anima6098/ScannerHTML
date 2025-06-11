@@ -2,26 +2,36 @@
 <html>
 <head>
   <title>Barcode Scanner</title>
-  <script src="https://unpkg.com/@zxing/browser@latest"></script>
-</head>
-<body>
-  <h2>Barcode Scanner (Real-time)</h2>
-  <video id="video" width="400" height="300" style="border:1px solid black;"></video>
-  <p id="result"></p>
+  <script type="module">
+    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@latest/+esm';
 
-  <script>
-    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const codeReader = new BrowserMultiFormatReader();
     const resultElement = document.getElementById('result');
 
     codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
       if (result) {
         const text = result.getText();
-        resultElement.textContent = 'Scanned: ' + text;
+        resultElement.textContent = '✅ Scanned: ' + text;
         navigator.clipboard.writeText(text).then(() => {
           console.log('Copied to clipboard:', text);
         });
+      } else if (err && !(err instanceof ZXing.NotFoundException)) {
+        console.error(err);
       }
+    }).catch(err => {
+      console.error('Camera access error:', err);
+      resultElement.textContent = '❌ Could not access camera. Check browser permissions.';
     });
   </script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; margin: 40px; }
+    video { border: 2px solid #000; width: 100%; max-width: 480px; }
+    #result { font-size: 20px; margin-top: 20px; color: green; }
+  </style>
+</head>
+<body>
+  <h2>📷 Barcode Scanner (Real-time)</h2>
+  <video id="video" autoplay muted playsinline></video>
+  <p id="result">Waiting for scan...</p>
 </body>
 </html>

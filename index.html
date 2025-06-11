@@ -1,45 +1,98 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Barcode Scanner</title>
+  <title>Barcode Scanner (Improved)</title>
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <style>
-    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-    video { border: 1px solid black; width: 100%; max-width: 480px; }
-    #result { margin-top: 20px; font-size: 20px; color: green; }
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 40px auto;
+    }
+    video {
+      border: 2px solid black;
+      width: 100%;
+      max-width: 480px;
+    }
+    #result {
+      margin-top: 20px;
+      font-size: 20px;
+      color: green;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
+
   <h2>📷 Barcode Scanner (Real-time)</h2>
   <video id="video" autoplay muted playsinline></video>
   <p id="result">Waiting for scan...</p>
+  <button onclick="toggleTorch()">🔦 Toggle Flashlight</button>
 
   <script>
-    const selectedDeviceId = null;
-    const codeReader = new ZXing.BrowserMultiFormatReader();
+    const codeReader = new ZXing.BrowserMultiFormatReader(); // You can specify format here if needed
     const resultElement = document.getElementById('result');
+    const videoElement = document.getElementById('video');
+
+    let lastScanned = '';
+    let streamTrack = null;
 
     codeReader
       .listVideoInputDevices()
       .then(videoInputDevices => {
-        const deviceId = selectedDeviceId || videoInputDevices[0].deviceId;
+        const deviceId = videoInputDevices[0].deviceId;
 
-        codeReader.decodeFromVideoDevice(deviceId, 'video', (result, err) => {
+        codeReader.decodeFromConstraints({
+          video: {
+            deviceId: deviceId,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: "environment"
+          }
+        }, videoElement, (result, err) => {
           if (result) {
             const text = result.getText();
-            resultElement.textContent = '✅ Scanned: ' + text;
-            navigator.clipboard.writeText(text).then(() => {
-              console.log('Copied to clipboard:', text);
-            });
+            if (text !== lastScanned) {
+              lastScanned = text;
+              resultElement.textContent = '✅ Scanned: ' + text;
+              navigator.clipboard.writeText(text)
+                .then(() => console.log('Copied to clipboard:', text))
+                .catch(err => console.error('Clipboard error:', err));
+            }
           } else if (err && !(err instanceof ZXing.NotFoundException)) {
             console.error(err);
           }
         });
+
+        // Get the video stream for torch toggle
+        navigator.mediaDevices.getUserMedia({
+          video: { deviceId: deviceId }
+        }).then(stream => {
+          streamTrack = stream.getVideoTracks()[0];
+        }).catch(console.error);
+
       })
       .catch(err => {
         console.error(err);
         resultElement.textContent = '❌ Could not access camera. Check permissions.';
       });
+
+    function toggleTorch() {
+      if (!streamTrack) return alert("Camera not ready.");
+      const capabilities = streamTrack.getCapabilities();
+      if ('torch' in capabilities) {
+        const torchOn = streamTrack.getSettings().torch || false;
+        streamTrack.applyConstraints({
+          advanced: [{ torch: !torchOn }]
+        });
+      } else {
+        alert("❌ Torch not supported on this device.");
+      }
+    }
   </script>
 </body>
 </html>
